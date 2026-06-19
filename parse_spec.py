@@ -227,15 +227,19 @@ def load_source(path, sheet=None):
         try:
             import pdfplumber
         except ImportError:
-            raise SystemExit("Для PDF установите:  pip install pdfplumber")
+            raise RuntimeError("Для PDF нужен пакет pdfplumber: pip install pdfplumber")
         with pdfplumber.open(path) as pdf:
             pages_text = [(p.extract_text() or "") for p in pdf.pages]
         full = "\n".join(pages_text)
         return parse_bom(pages_text), full, "pdf"
     if ext in (".xlsx", ".xls", ".xlsm", ".csv"):
-        rows, full = load_bom_table(path, sheet)
+        try:
+            rows, full = load_bom_table(path, sheet)
+        except ImportError:
+            raise RuntimeError("Для Excel нужен пакет openpyxl: pip install openpyxl")
         return rows, full, "table"
-    raise SystemExit(f"Неподдерживаемый формат: {ext} (нужен .pdf/.xlsx/.csv)")
+    raise RuntimeError(f"Неподдерживаемый формат: {ext or '(без расширения)'}. "
+                       f"Поддерживаются .pdf, .xlsx, .xls, .csv")
 
 
 def build_features(path, sheet=None):

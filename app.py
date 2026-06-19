@@ -238,12 +238,15 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, json.dumps({"error": "not found"}))
 
     def do_POST(self):
-        n = int(self.headers.get("Content-Length", 0))
+        # Ловим ВСЕ исключения (включая SystemExit), иначе соединение оборвётся без
+        # ответа и браузер покажет «NetworkError» вместо понятного сообщения.
         try:
-            req = json.loads(self.rfile.read(n) or b"{}")
-        except Exception:
-            return self._send(400, json.dumps({"error": "bad json"}))
-        try:
+            n = int(self.headers.get("Content-Length", 0))
+            try:
+                req = json.loads(self.rfile.read(n) or b"{}")
+            except Exception:
+                return self._send(400, json.dumps({"error": "Некорректный запрос (JSON)"},
+                                                  ensure_ascii=False))
             if self.path == "/api/predict":
                 content = base64.b64decode(req["content_b64"])
                 feats, _ = features_from_upload(req["filename"], content)
@@ -258,8 +261,12 @@ class Handler(BaseHTTPRequestHandler):
                                            ensure_ascii=False))
             else:
                 self._send(404, json.dumps({"error": "not found"}))
-        except Exception as e:
-            self._send(500, json.dumps({"error": str(e)}, ensure_ascii=False))
+        except BaseException as e:
+            try:
+                self._send(500, json.dumps({"error": f"{type(e).__name__}: {e}"},
+                                           ensure_ascii=False))
+            except Exception:
+                pass
 
 
 def main():
