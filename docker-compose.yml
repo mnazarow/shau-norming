@@ -1,0 +1,12 @@
+services:
+  shau-web:
+    build: .
+    image: shau-norming:latest
+    container_name: shau-norming
+    ports:
+      - "8000:8000"
+    volumes:
+      # папка для данных/моделей; положите сюда model_shau.cbm для ML-поправки
+      # и сошлитесь на неё, либо просто пересоберите образ с моделью в корне.
+      - ./data:/app/data
+    restart: unless-stopped

@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Данные/модели (генерируются, не версионируются)
+data/
+specs/
+training_data.csv
+model_shau.cbm
+*.log
+
+# ОС/редакторы
+.DS_Store
+.idea/
+.vscode/

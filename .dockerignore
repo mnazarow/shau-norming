@@ -1,0 +1,12 @@
+.git
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/
+specs/
+*.docx
+*.pdf
+training_data.csv
+*.log
+.DS_Store

@@ -1,0 +1,49 @@
+{
+  "ip_rating": "IP66",
+  "width_mm": 800,
+  "height_mm": 600,
+  "depth_mm": 300,
+  "mount_panel": true,
+  "din_inclined": true,
+  "cable_entries": 19,
+  "cable_entries_detail": [
+    {
+      "count": 4,
+      "dia_mm": 25
+    },
+    {
+      "count": 14,
+      "dia_mm": 20
+    },
+    {
+      "count": 1,
+      "dia_mm": 32
+    }
+  ],
+  "breakers_le63": 5,
+  "load_switches": 1,
+  "contactors": 0,
+  "rcd": 0,
+  "freq_converters": 3,
+  "soft_starters": 0,
+  "plc": 1,
+  "hmi": 1,
+  "power_supplies": 1,
+  "signal_lamps": 1,
+  "relays": 3,
+  "phase_relays": 1,
+  "analog_4_20mA": 11,
+  "analog_0_10V": 0,
+  "interfaces": {
+    "ethernet": true,
+    "rs485": true,
+    "modbus": true,
+    "profibus": false
+  },
+  "interfaces_count": 3,
+  "terminals": 50,
+  "fuse_holders": 7,
+  "fans": 2,
+  "thermostats": 1,
+  "_source": "pdf"
+}

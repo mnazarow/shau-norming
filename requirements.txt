@@ -1,0 +1,8 @@
+# Зависимости веб-интерфейса и парсера (Python 3.9+)
+numpy>=1.23
+pandas>=1.5
+pdfplumber>=0.10      # парсинг PDF-спецификаций
+openpyxl>=3.1         # чтение EPLAN-Excel / запись xlsx
+
+# ML-обучение (необязательно — в train_model.py есть numpy-fallback):
+#   pip install catboost
