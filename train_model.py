@@ -19,6 +19,7 @@
 
 Запуск:  python3 train_model.py --data synthetic_dataset.csv
 """
+import os
 import argparse
 import json
 import numpy as np
@@ -70,45 +71,47 @@ def train_catboost(Xtr, ytr, wtr, Xval, cat_idx):
     return model, model.predict(Pool(Xval, cat_features=cat_idx))
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--data", default="synthetic_dataset.csv")
-    ap.add_argument("--val-frac", type=float, default=0.2)
-    ap.add_argument("--out", default="model_shau.json")
-    args = ap.parse_args()
+def run_training(data_path="synthetic_dataset.csv", val_frac=0.2, out="model_shau.json"):
+    """Обучает модель и возвращает (отчёт, предиктор-поправки).
 
-    df = pd.read_csv(args.data)
+    Отчёт — JSON-сериализуемый словарь с метриками, Anchor-тестом, важностями и
+    предсказаниями на валидации (для графиков). Предиктор — функция features->поправка,
+    которой пользуется веб-интерфейс для прогноза.
+    """
+    df = pd.read_csv(data_path)
 
-    # --- Очистка выбросов (ТЗ, Этап 1): отсев записей, где факт сильно расходится с
-    #     оценкой не из-за сложности, а из-за внешних причин (простои поставок и т.п.). ---
+    # Очистка выбросов (ТЗ, Этап 1): отсев записей, где факт расходится с оценкой не
+    # из-за сложности, а из-за внешних причин (простои поставок и т.п.).
     n0 = len(df)
     ratio = df[TARGET] / df[BASELINE]
     lo, hi = ratio.quantile(0.02), ratio.quantile(0.98)
     df = df[(ratio >= lo) & (ratio <= hi)].reset_index(drop=True)
-    print(f"Очистка выбросов: удалено {n0 - len(df)} из {n0} записей "
-          f"(факт/оценка вне [{lo:.2f}; {hi:.2f}]).\n")
+    n_out = n0 - len(df)
 
     rng = np.random.default_rng(42)
     idx = rng.permutation(len(df))
-    n_val = int(len(df) * args.val_frac)
+    n_val = int(len(df) * val_frac)
     val_idx, tr_idx = idx[:n_val], idx[n_val:]
     tr, val = df.iloc[tr_idx].copy(), df.iloc[val_idx].copy()
 
-    # Обучение на остатках: цель = факт − baseline
     ytr = (tr[TARGET] - tr[BASELINE]).values
     wtr = sample_weights(tr)
 
-    engine = None
     try:
         cat_idx = [ALL_FEATURES.index(c) for c in CAT_FEATURES]
         model, pred_resid = train_catboost(
             tr[ALL_FEATURES], ytr, wtr, val[ALL_FEATURES], cat_idx)
         engine = "CatBoost"
-        importances = dict(zip(ALL_FEATURES, model.get_feature_importance()))
-        anchor_feat = pd.DataFrame([{**ANCHOR}])[ALL_FEATURES]
-        anchor_resid = float(model.predict(anchor_feat)[0])
-    except Exception as e:
-        # ---- ЗАПАСНОЙ движок (numpy) ----
+        importances = dict(zip(ALL_FEATURES, [float(x) for x in model.get_feature_importance()]))
+        try:
+            model.save_model("model_shau.cbm")
+        except Exception:
+            pass
+
+        def predictor(features):
+            row = pd.DataFrame([{k: features.get(k) for k in ALL_FEATURES}])
+            return float(model.predict(row[ALL_FEATURES])[0])
+    except Exception:
         from gbdt_numpy import GBDTRegressor
         tr_e, maps = encode_categories(tr)
         val_e, _ = encode_categories(val, maps)
@@ -117,46 +120,63 @@ def main():
         model.fit(tr_e[ALL_FEATURES].values, ytr, sample_weight=wtr)
         pred_resid = model.predict(val_e[ALL_FEATURES].values)
         engine = "numpy-GBDT (fallback)"
-        importances = dict(zip(ALL_FEATURES, model.feature_importances_))
-        anchor_e, _ = encode_categories(pd.DataFrame([{**ANCHOR}]), maps)
-        anchor_resid = float(model.predict(anchor_e[ALL_FEATURES].values)[0])
-        print(f"[i] CatBoost недоступен ({type(e).__name__}); использован запасной движок.\n")
+        importances = dict(zip(ALL_FEATURES, [float(x) for x in model.feature_importances_]))
 
-    # Прогноз = baseline + поправка
+        def predictor(features):
+            row, _ = encode_categories(pd.DataFrame([{k: features.get(k) for k in ALL_FEATURES}]), maps)
+            return float(model.predict(row[ALL_FEATURES].values)[0])
+
     pred_ml = val[BASELINE].values + pred_resid
     y_val = val[TARGET].values
+    mae_b, mape_b, r2_b = metrics(y_val, val[BASELINE].values)
+    mae_m, mape_m, r2_m = metrics(y_val, pred_ml)
 
-    mae_b, mape_b, r2_b = metrics(y_val, val[BASELINE].values)   # только Слой A
-    mae_m, mape_m, r2_m = metrics(y_val, pred_ml)                # Слой A + ML
-
-    print(f"=== Движок: {engine} ===")
-    print(f"Датасет: {len(df)} проектов (train {len(tr)} / val {len(val)})\n")
-    print(f"{'Модель':28} {'MAE, ч':>8} {'MAPE, %':>9} {'R²':>7}")
-    print(f"{'Параметрическая (Слой A)':28} {mae_b:8.2f} {mape_b:9.1f} {r2_b:7.3f}")
-    print(f"{'Слой A + ML-поправка':28} {mae_m:8.2f} {mape_m:9.1f} {r2_m:7.3f}")
-
-    # Тест на Anchor
     anchor_base = estimate_hours(ANCHOR)
+    anchor_resid = predictor(ANCHOR)
     anchor_pred = anchor_base + anchor_resid
-    ok = 18 <= anchor_pred <= 22
-    print(f"\nТест на Anchor-проекте (ТЗ: 18-22 ч):")
-    print(f"  baseline={anchor_base:.1f} ч  +поправка={anchor_resid:+.1f} ч  "
-          f"=> прогноз={anchor_pred:.1f} ч  [{'OK' if ok else 'ВНЕ ДИАПАЗОНА'}]")
 
-    print(f"\nКритерии приёмки ТЗ: MAE ≤10-15%, R² ≥0.85")
-    crit = (mape_m <= 15) and (r2_m >= 0.85)
-    print(f"  MAPE={mape_m:.1f}%  R²={r2_m:.3f}  =>  {'СОБЛЮДЕНЫ' if crit else 'не соблюдены'}")
+    report = {
+        "engine": engine, "dataset": os.path.basename(data_path),
+        "n_total": n0, "n_used": len(df), "n_outliers": n_out,
+        "n_train": len(tr), "n_val": len(val),
+        "metrics_baseline": {"MAE": mae_b, "MAPE": mape_b, "R2": r2_b},
+        "metrics_ml": {"MAE": mae_m, "MAPE": mape_m, "R2": r2_m},
+        "anchor": {"baseline": round(anchor_base, 2), "delta": round(anchor_resid, 2),
+                   "pred": round(anchor_pred, 2), "ok": bool(18 <= anchor_pred <= 22)},
+        "criteria_ok": bool(mape_m <= 15 and r2_m >= 0.85),
+        "importances": importances,
+        "val": {"actual": [round(v, 2) for v in y_val.tolist()],
+                "baseline": [round(v, 2) for v in val[BASELINE].tolist()],
+                "ml": [round(v, 2) for v in pred_ml.tolist()]},
+    }
+    if out:
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+    return report, predictor
 
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data", default="synthetic_dataset.csv")
+    ap.add_argument("--val-frac", type=float, default=0.2)
+    ap.add_argument("--out", default="model_shau.json")
+    args = ap.parse_args()
+
+    r, _ = run_training(args.data, args.val_frac, args.out)
+    print(f"=== Движок: {r['engine']} ===")
+    print(f"Очистка выбросов: удалено {r['n_outliers']} из {r['n_total']}")
+    print(f"Датасет: {r['n_used']} проектов (train {r['n_train']} / val {r['n_val']})\n")
+    print(f"{'Модель':28} {'MAE, ч':>8} {'MAPE, %':>9} {'R²':>7}")
+    mb, mm = r["metrics_baseline"], r["metrics_ml"]
+    print(f"{'Параметрическая (Слой A)':28} {mb['MAE']:8.2f} {mb['MAPE']:9.1f} {mb['R2']:7.3f}")
+    print(f"{'Слой A + ML-поправка':28} {mm['MAE']:8.2f} {mm['MAPE']:9.1f} {mm['R2']:7.3f}")
+    a = r["anchor"]
+    print(f"\nAnchor-тест (18-22 ч): baseline {a['baseline']} + поправка {a['delta']:+} "
+          f"=> {a['pred']} ч  [{'OK' if a['ok'] else 'ВНЕ ДИАПАЗОНА'}]")
+    print(f"Критерии ТЗ (MAPE≤15%, R²≥0.85): {'СОБЛЮДЕНЫ' if r['criteria_ok'] else 'не соблюдены'}")
     print("\nТоп-10 важных признаков:")
-    for k, v in sorted(importances.items(), key=lambda x: -x[1])[:10]:
+    for k, v in sorted(r["importances"].items(), key=lambda x: -x[1])[:10]:
         print(f"  {k:22} {v:6.3f}")
-
-    with open(args.out, "w", encoding="utf-8") as f:
-        json.dump({"engine": engine,
-                   "metrics_ml": {"MAE": mae_m, "MAPE": mape_m, "R2": r2_m},
-                   "metrics_baseline": {"MAE": mae_b, "MAPE": mape_b, "R2": r2_b},
-                   "anchor_pred_h": anchor_pred,
-                   "importances": importances}, f, ensure_ascii=False, indent=2)
     print(f"\nОтчёт сохранён: {args.out}")
 
 
