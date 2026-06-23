@@ -162,6 +162,27 @@ PORT=8080 ./run_server.sh         # другой порт
 sudo ./run_server.sh --systemd    # установить как сервис systemd (автозапуск)
 ```
 
+### Развёртывание из GitHub на чистый сервер
+
+Один скрипт ставит зависимости, клонирует репозиторий и поднимает сервис
+(идемпотентно — повторный запуск обновляет код и перезапускает):
+
+```bash
+# на чистом Ubuntu/Debian-сервере, под root/sudo:
+curl -fsSL https://raw.githubusercontent.com/mnazarow/shau-norming/main/deploy_from_github.sh | sudo bash
+
+# варианты:
+sudo ./deploy_from_github.sh --native        # без Docker (venv + systemd)
+sudo ./deploy_from_github.sh --port 80        # другой внешний порт
+sudo ./deploy_from_github.sh --branch dev      # другая ветка
+
+# обновление развёрнутого сервиса:
+sudo /opt/shau-norming/deploy_from_github.sh
+```
+
+По умолчанию режим Docker (ставит Docker при необходимости, `restart=unless-stopped`).
+В native-режиме создаётся systemd-сервис `shau-norming` с автозапуском.
+
 ### Публикация на GitHub
 
 ```bash
