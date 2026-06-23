@@ -26,7 +26,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import parse_spec
 import norms_model
-import train_model
+# train_model / numpy / pandas импортируются ЛЕНИВО (только для обучения и аналитики),
+# чтобы сервер запускался и работал «Прогноз» даже без установленного numpy/pandas.
+
+DEPS_HINT = ("Не установлены зависимости (numpy/pandas). Выполните: "
+             "python3 -m pip install -r requirements.txt — или запустите ./run_server.sh / Docker.")
 
 # ------------------------------------------------------------------ состояние
 PREDICTOR = None        # функция features -> ML-поправка (после обучения / загрузки модели)
@@ -444,7 +448,10 @@ class Handler(BaseHTTPRequestHandler):
                 ds = active_dataset()
                 if not ds:
                     return self._send(200, json.dumps({"error": "датасет не найден"}, ensure_ascii=False))
-                return self._send(200, json.dumps(dataset_report(ds), ensure_ascii=False))
+                try:
+                    return self._send(200, json.dumps(dataset_report(ds), ensure_ascii=False))
+                except ImportError:
+                    return self._send(200, json.dumps({"error": DEPS_HINT}, ensure_ascii=False))
             return self._send(404, json.dumps({"error": "not found"}))
         except BaseException as e:
             self._send(500, json.dumps({"error": f"{type(e).__name__}: {e}"}, ensure_ascii=False))
@@ -473,6 +480,10 @@ class Handler(BaseHTTPRequestHandler):
                 ds = req.get("dataset") or active_dataset()
                 if not ds or not os.path.exists(ds):
                     return self._send(200, json.dumps({"error": "датасет не найден"}, ensure_ascii=False))
+                try:
+                    import train_model
+                except ImportError:
+                    return self._send(200, json.dumps({"error": DEPS_HINT}, ensure_ascii=False))
                 report, predictor = train_model.run_training(ds)
                 PREDICTOR, LAST_TRAIN = predictor, report
                 return self._send(200, json.dumps(report, ensure_ascii=False))
