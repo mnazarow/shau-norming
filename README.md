@@ -181,7 +181,18 @@ sudo /opt/shau-norming/deploy_from_github.sh
 ```
 
 По умолчанию режим Docker (ставит Docker при необходимости, `restart=unless-stopped`).
-В native-режиме создаётся systemd-сервис `shau-norming` с автозапуском.
+
+**Без Docker — отдельный скрипт** `deploy_native.sh` (venv + systemd под отдельным
+пользователем, идемпотентно):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mnazarow/shau-norming/main/deploy_native.sh | sudo bash
+
+sudo ./deploy_native.sh --port 80          # внешний порт
+sudo ./deploy_native.sh --with-ml          # + установить CatBoost (полный ML)
+sudo /opt/shau-norming/deploy_native.sh    # обновление
+# управление:  systemctl status|restart|stop shau-norming   ·   journalctl -u shau-norming -f
+```
 
 ### Публикация на GitHub
 
