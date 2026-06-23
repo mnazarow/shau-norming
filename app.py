@@ -501,8 +501,14 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     args = ap.parse_args()
     print("Веб-интерфейс нормирования ШАУ — Прогноз / Обучение / Аналитика / Статистика")
-    print(f"Откройте:  http://{args.host}:{args.port}")
-    ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
+    print(f"Откройте:  http://{args.host}:{args.port}   (Ctrl+C — остановить)")
+    srv = ThreadingHTTPServer((args.host, args.port), Handler)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\nСервер остановлен.")
+    finally:
+        srv.server_close()
 
 
 if __name__ == "__main__":
